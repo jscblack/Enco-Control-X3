@@ -15,6 +15,8 @@ final class EncoProtocol {
     static final int NOTIFICATION_EVENT = 0x0204;
     static final int NOISE_MODE_RESPONSE = 0x810C;
     static final int DIRECT_BATTERY_RESPONSE = 0x0617;
+    /** X3 answers the direct 0x0106 query with 0x8106; 0x0617 is the older capture. */
+    static final int DIRECT_BATTERY_RESPONSE_8106 = 0x8106;
 
     static final int MODE_OFF = 0;
     static final int MODE_TRANSPARENCY = 1;
@@ -28,6 +30,43 @@ final class EncoProtocol {
     }
 
     static byte[] setNoiseModeFrame(int mode, int sequence) {
+        return setNoiseModeFrame(mode, sequence, false);
+    }
+
+    /**
+     * @param x3 true for Enco X3, which exposes every noise mode as its own bitmap child.
+     *           The firmware also accepts the parent values 0x01/0x02/0x04, but resolves them
+     *           to the child that was last used (0x04 was observed landing on 0x200), so the
+     *           panel writes child bitmaps instead of relying on a remembered level.
+     */
+    static byte[] setNoiseModeFrame(int mode, int sequence, boolean x3) {
+        if (x3) {
+            switch (mode) {
+                case MODE_OFF:
+                    // X3 off child (bit 3).
+                    return singleFrame(
+                            CMD_SET_NOISE_MODE,
+                            new byte[]{0x01, 0x01, 0x08},
+                            sequence
+                    );
+                case MODE_TRANSPARENCY:
+                    // Fixed transparency child (bit 8), not the 0x04 parent.
+                    return singleFrame(
+                            CMD_SET_NOISE_MODE,
+                            new byte[]{0x01, 0x01, 0x00, 0x01},
+                            sequence
+                    );
+                case MODE_ANC:
+                    // EncoController sends an explicit level; Smart is the vendor default.
+                    return singleFrame(
+                            CMD_SET_NOISE_MODE,
+                            new byte[]{0x01, 0x01, (byte) 0x80},
+                            sequence
+                    );
+                default:
+                    throw new IllegalArgumentException("Unsupported X3 noise mode: " + mode);
+            }
+        }
         if (mode == MODE_ADAPTIVE) {
             // Adaptive sits at bitmap bit 12, so the mode field carries a little-endian
             // 16-bit bitmap instead of the single-byte enum the older modes use.
@@ -59,6 +98,28 @@ final class EncoProtocol {
         );
     }
 
+    /** Cancellation level 1..4 -> bitmap bits 4..7 (X3 and X4). */
+    static byte[] setNoiseDepthFrame(int depth, int sequence) {
+        int mask = 1 << (3 + Math.max(1, Math.min(4, depth)));
+        return singleFrame(
+                CMD_SET_NOISE_MODE,
+                new byte[]{0x01, 0x01, (byte) mask},
+                sequence
+        );
+    }
+
+    /**
+     * Enco X3 only: bit 9 is the transparency "强化人声" switch. Enabling it writes
+     * {@code 0x200}; disabling it returns to fixed transparency {@code 0x100}.
+     */
+    static byte[] setTransparencyVoiceFrame(boolean enabled, int sequence) {
+        return singleFrame(
+                CMD_SET_NOISE_MODE,
+                new byte[]{0x01, 0x01, 0x00, (byte) (enabled ? 0x02 : 0x01)},
+                sequence
+        );
+    }
+
     static byte[] queryNoiseModeFrame(int sequence) {
         return singleFrame(
                 CMD_GET_CURRENT_NOISE_MODE,
@@ -82,6 +143,11 @@ final class EncoProtocol {
                 new byte[]{0x01, 0x06, 0x01, 0x00, 0x00},
                 sequence
         );
+    }
+
+    /** X3 product-id query; read-only and safe to send once during bring-up. */
+    static byte[] queryProductIdFrame(int sequence) {
+        return singleFrame(0x0103, null, sequence);
     }
 
     static byte[] protocolHelloFrame(int sequence) {
@@ -145,6 +211,7 @@ final class EncoProtocol {
             int command = littleEndian16(data, offset);
             if (command != NOTIFICATION_EVENT
                     && command != DIRECT_BATTERY_RESPONSE
+                    && command != DIRECT_BATTERY_RESPONSE_8106
                     && command != MULTI_SPP_RESPONSE) {
                 continue;
             }
@@ -320,6 +387,9 @@ final class EncoProtocol {
                 return MODE_ANC;
             case 2:
             case 8:
+                return MODE_TRANSPARENCY;
+            case 9:
+                // X3 bit 9 is the transparency "强化人声" child, not a major mode.
                 return MODE_TRANSPARENCY;
             case 12:
                 // Adaptive: a major mode of its own, not one of the cancellation steps.

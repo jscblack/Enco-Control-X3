@@ -24,6 +24,7 @@ final class EncoSession implements EncoController.Listener {
     private boolean connected, connecting, keepingWidgets, bothInCase, refreshing;
     private boolean leftInBox, rightInBox;
     private int noiseDepth = -1;
+    private boolean transparencyVoice;
     private boolean interactive = true, pendingFromWidget;
     private String message = "已断开";
     private final Runnable modeTimeout = this::expireMode;
@@ -60,6 +61,11 @@ final class EncoSession implements EncoController.Listener {
             controller.setNoiseDepth(depth);
             return true;
         }
+
+        boolean setTransparencyVoice(boolean enabled) {
+            if (closed || !connected || controller == null) return false;
+            return controller.setTransparencyVoice(enabled);
+        }
         void refreshNoiseMode() { if (!closed && controller != null) controller.refreshNoiseMode(); }
         void disconnect() { if (!closed) disconnectInternal(true); }
         void pausePanel() { if (!closed && !keepingWidgets) disconnectInternal(false); }
@@ -90,6 +96,9 @@ final class EncoSession implements EncoController.Listener {
             client.listener.onEarStatus(bothInCase);
             if (state.confirmedMode >= 0) client.listener.onNoiseMode(state.confirmedMode);
             if (noiseDepth > 0) client.listener.onNoiseDepth(noiseDepth);
+            if (state.confirmedMode == EncoProtocol.MODE_TRANSPARENCY) {
+                client.listener.onTransparencyVoice(transparencyVoice);
+            }
         }
     }
 
@@ -173,6 +182,7 @@ final class EncoSession implements EncoController.Listener {
             state.disconnect();
             bothInCase = false;
             noiseDepth = -1;
+            transparencyVoice = false;
             refreshing = false;
             handler.removeCallbacks(modeTimeout);
             handler.removeCallbacks(refreshTimeout);
@@ -204,6 +214,7 @@ final class EncoSession implements EncoController.Listener {
     @Override public void onNoiseMode(int mode) {
         if (!connected || !PanelState.validMode(mode)) return;
         state.observeMode(mode);
+        if (mode != EncoProtocol.MODE_TRANSPARENCY) transparencyVoice = false;
         if (state.pendingMode < 0) {
             handler.removeCallbacks(modeTimeout);
             pendingFromWidget = false;
@@ -215,5 +226,12 @@ final class EncoSession implements EncoController.Listener {
         if (!connected || depth <= 0) return;
         noiseDepth = depth;
         for (Client c : new ArrayList<>(clients)) if (!c.closed) c.listener.onNoiseDepth(depth);
+    }
+    @Override public void onTransparencyVoice(boolean enabled) {
+        if (!connected) return;
+        transparencyVoice = enabled;
+        for (Client c : new ArrayList<>(clients)) {
+            if (!c.closed) c.listener.onTransparencyVoice(enabled);
+        }
     }
 }

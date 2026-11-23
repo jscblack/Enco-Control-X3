@@ -65,6 +65,10 @@ final class EncoController {
         default void onNoiseDepth(int depth) {
         }
 
+        /** Enco X3 transparency "强化人声" switch; other models never report it. */
+        default void onTransparencyVoice(boolean enabled) {
+        }
+
         /** Per-ear case state, so the panel can label each earbud separately. */
         default void onEarDetail(boolean leftInBox, boolean rightInBox) {
         }
@@ -94,6 +98,10 @@ final class EncoController {
     private ScheduledFuture<?> reconnectTask;
     private volatile long pollIntervalMs = 5000;
     private long lastPollNanos;
+    // Set after the RFCOMM channel opens; read by the IO tasks and the reader thread.
+    private volatile String modelName;
+    // Last cancellation level reported by the earbuds (1..4), used when X3 re-enters ANC.
+    private volatile int lastDepth = -1;
 
     private static final class Session {
         final long generation;
@@ -170,7 +178,25 @@ final class EncoController {
                 return;
             }
             ioExecutor.execute(() -> runSessionTask(target, () -> {
-                send(target, EncoProtocol.setNoiseModeFrame(mode, target.nextSequence()));
+                if (EncoModels.isX3(modelName)) {
+                    // X3 resolves parent values to whichever child was last used, so the
+                    // panel writes child bitmaps and keeps the remembered level explicit.
+                    if (mode == EncoProtocol.MODE_ADAPTIVE) {
+                        return;
+                    }
+                    if (mode == EncoProtocol.MODE_ANC) {
+                        int depth = lastDepth >= 1 ? lastDepth : 4;
+                        lastDepth = depth;
+                        send(target, EncoProtocol.setNoiseDepthFrame(
+                                depth, target.nextSequence()));
+                    } else {
+                        send(target, EncoProtocol.setNoiseModeFrame(
+                                mode, target.nextSequence(), true));
+                    }
+                } else {
+                    send(target, EncoProtocol.setNoiseModeFrame(
+                            mode, target.nextSequence()));
+                }
                 scheduleSessionTask(target, () -> queryNoiseMode(target), 450);
             }));
         }
@@ -185,19 +211,41 @@ final class EncoController {
      * the panel keeps showing cancellation.
      */
     void setNoiseDepth(int depth) {
-        final int mask = 1 << (3 + Math.max(1, Math.min(4, depth)));
+        int safeDepth = Math.max(1, Math.min(4, depth));
         synchronized (stateLock) {
-            if (closed || userDisconnected || session == null) {
+            if (closed || userDisconnected || session == null
+                    || !EncoModels.hasAncLevels(modelName)) {
                 return;
+            }
+            lastDepth = safeDepth;
+            Session target = session;
+            ioExecutor.execute(() -> runSessionTask(target, () -> {
+                send(target, EncoProtocol.setNoiseDepthFrame(
+                        safeDepth, target.nextSequence()));
+                scheduleSessionTask(target, () -> queryNoiseMode(target), 450);
+            }));
+        }
+    }
+
+    /**
+     * Enco X3 only: toggles the transparency "强化人声" child (bit 9).
+     *
+     * @return false when the connected model does not expose the switch, so the panel can
+     *         restore its pending state instead of waiting for a confirmation that cannot come.
+     */
+    boolean setTransparencyVoice(boolean enabled) {
+        synchronized (stateLock) {
+            if (closed || userDisconnected || session == null
+                    || !EncoModels.isX3(modelName)) {
+                return false;
             }
             Session target = session;
             ioExecutor.execute(() -> runSessionTask(target, () -> {
-                send(target, EncoProtocol.singleFrame(
-                        EncoProtocol.CMD_SET_NOISE_MODE,
-                        new byte[]{0x01, 0x01, (byte) mask},
-                        target.nextSequence()));
+                send(target, EncoProtocol.setTransparencyVoiceFrame(
+                        enabled, target.nextSequence()));
                 scheduleSessionTask(target, () -> queryNoiseMode(target), 450);
             }));
+            return true;
         }
     }
 
@@ -216,7 +264,7 @@ final class EncoController {
             if (closed || userDisconnected || session == null) return;
             Session target = session;
             ioExecutor.execute(() -> runSessionTask(target, () -> {
-                send(target, EncoProtocol.multiBatteryRequestFrame(target.nextSequence()));
+                requestBattery(target);
                 queryNoiseMode(target);
             }));
         }
@@ -316,6 +364,7 @@ final class EncoController {
             // Remember the model we last talked to: widgets keep its artwork while the
             // headset is disconnected instead of falling back to the generic drawing.
             String model = device.getName();
+            modelName = model;
             if (model != null) {
                 context.getSharedPreferences("enco_widgets", Context.MODE_PRIVATE)
                         .edit()
@@ -342,14 +391,17 @@ final class EncoController {
             startReadLoop(established);
             runSessionTask(established, () -> {
                 send(established, EncoProtocol.protocolHelloFrame(established.nextSequence()));
+                if (EncoModels.isX3(modelName)) {
+                    // Mirrors the macOS X3 init sequence; the 0x8103 reply carries the product id.
+                    send(established, EncoProtocol.queryProductIdFrame(established.nextSequence()));
+                }
                 send(established, EncoProtocol.queryNotificationCapabilityFrame(established.nextSequence()));
                 scheduleSessionTask(established, () -> {
                     send(established, EncoProtocol.registerNotificationsFrame(established.nextSequence()));
                     queryNoiseMode(established);
-                    send(established, EncoProtocol.multiBatteryRequestFrame(established.nextSequence()));
+                    requestBattery(established);
                 }, 350);
-                scheduleSessionTask(established, () -> send(established,
-                        EncoProtocol.multiBatteryRequestFrame(established.nextSequence())), 1400);
+                scheduleSessionTask(established, () -> requestBattery(established), 1400);
                 synchronized (stateLock) {
                     if (session == established && isCurrentLocked(token)) {
                         sessionTasks.add(ioExecutor.scheduleWithFixedDelay(
@@ -503,7 +555,8 @@ final class EncoController {
             if (loose == null) {
                 // Loose match for firmware variants that append a suffix to the model name.
                 String normalized = EncoModels.normalize(name);
-                if ((normalized.contains("free4") || normalized.contains("x4"))
+                if ((normalized.contains("free4") || normalized.contains("x4")
+                        || normalized.contains("x3"))
                         && (normalized.contains("enco") || normalized.contains("oppo"))) {
                     loose = device;
                 }
@@ -545,8 +598,16 @@ final class EncoController {
         long now = System.nanoTime();
         if (now - lastPollNanos < TimeUnit.MILLISECONDS.toNanos(pollIntervalMs)) return;
         lastPollNanos = now;
-        send(target, EncoProtocol.multiBatteryRequestFrame(target.nextSequence()));
+        requestBattery(target);
         queryNoiseMode(target);
+    }
+
+    private void requestBattery(Session target) throws IOException {
+        send(target, EncoProtocol.multiBatteryRequestFrame(target.nextSequence()));
+        if (EncoModels.isX3(modelName)) {
+            // X3 is documented answering the direct query; keep it even if 0x012F is ignored.
+            send(target, EncoProtocol.requestBatteryFrame(target.nextSequence()));
+        }
     }
 
     private void queryNoiseMode(Session target) throws IOException {
@@ -597,10 +658,19 @@ final class EncoController {
                     if (mask > 0) {
                         final int mode = EncoProtocol.modeFromMask(mask);
                         final int depth = EncoProtocol.depthFromMask(mask);
+                        if (depth > 0) {
+                            lastDepth = depth;
+                        }
                         if (mode >= 0) {
                             postSessionCallback(target, () -> listener.onNoiseMode(mode));
                             if (depth > 0) {
                                 postSessionCallback(target, () -> listener.onNoiseDepth(depth));
+                            }
+                            if (mode == EncoProtocol.MODE_TRANSPARENCY
+                                    && EncoModels.isX3(modelName)) {
+                                final boolean voice = (mask & 0x200) != 0;
+                                postSessionCallback(target,
+                                        () -> listener.onTransparencyVoice(voice));
                             }
                         }
                     }
@@ -668,6 +738,8 @@ final class EncoController {
         session = null;
         pendingSocket = null;
         connecting = false;
+        modelName = null;
+        lastDepth = -1;
         ioExecutor.shutdownNow();
         if (!closed) {
             ioExecutor = newExecutor("EncoFree4-IO");

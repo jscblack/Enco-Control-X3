@@ -6,6 +6,7 @@ public final class SharedPreferences {
  public Editor edit(){return new Editor();}
  public final class Editor {
   public Editor putBoolean(String key,boolean value){values.put(key,value);return this;}
+  public Editor putString(String key,String value){return this;}
   public void apply(){}
  }
 }

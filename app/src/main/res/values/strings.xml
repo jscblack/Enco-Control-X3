@@ -41,6 +41,13 @@
     <string name="depth_2">中度降噪</string>
     <string name="depth_3">轻度降噪</string>
     <string name="depth_4">自适应</string>
+    <string name="x3_depth_1">深度降噪</string>
+    <string name="x3_depth_2">中度降噪</string>
+    <string name="x3_depth_3">轻度降噪</string>
+    <string name="x3_depth_4">智能切换</string>
+    <string name="mode_current_voice">当前 · %1$s · 强化人声</string>
+    <string name="voice_enhance_on">强化人声已开启</string>
+    <string name="voice_enhance_off">强化人声已关闭</string>
     <string name="mode_reading">正在读取当前模式</string>
     <string name="mode_read_failed_tag">当前模式未读取</string>
     <string name="mode_read_failed">未读到耳机当前模式，请刷新</string>

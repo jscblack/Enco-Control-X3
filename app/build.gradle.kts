@@ -15,8 +15,8 @@ android {
         applicationId = "io.codex.encofree4"
         minSdk = 34
         targetSdk = 34
-        versionCode = 31
-        versionName = "2.0.0-x4"
+        versionCode = 32
+        versionName = "2.1.0-x3"
     }
 
     signingConfigs {

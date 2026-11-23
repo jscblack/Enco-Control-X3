@@ -17,12 +17,14 @@ final class EncoModels {
      * Normalized (lowercase, whitespace removed) name fragments.
      *
      * <p>Free4 is the model the original implementation was validated against.
-     * X4 is expected to answer the same commands; it is pending on-device
-     * verification with firmware 116.116.100.
+     * X4 was verified with firmware 116.116.100. X3 shares the same transport and
+     * command set; its mode bitmaps were verified against the macOS EncoX3-Mac
+     * project and the vendor app, and still need an Android device pass.
      */
     private static final String[] NAMES = {
             "encofree4",
             "encox4",
+            "encox3",
             "encoclip",
     };
 
@@ -102,9 +104,34 @@ final class EncoModels {
         return R.drawable.enco_x4_white_buds;
     }
 
-    /** Adaptive is a separate major mode only on the model verified to expose it. */
+    /** X3 is the model added in 2.1.0; it shares the transport and TLV command set. */
+    static boolean isX3(String deviceName) {
+        return normalize(deviceName).contains("encox3");
+    }
+
+    /**
+     * Adaptive is a separate ANC major mode only on X4 (bitmap bit 12). X3 exposes its
+     * "smart" cancellation step at bit 7 instead, so the X4 adaptive button stays hidden.
+     */
     static boolean hasAdaptiveMode(String deviceName) {
         return normalize(deviceName).contains("encox4");
+    }
+
+    /**
+     * X3 exposes transparency as two children: fixed transparency (bit 8) and the
+     * "强化人声" voice-enhancement switch (bit 9). Other models have no such switch.
+     */
+    static boolean hasTransparencyVoice(String deviceName) {
+        return isX3(deviceName);
+    }
+
+    /**
+     * Whether long-pressing the cancellation button can walk explicit ANC levels.
+     * X3 and X4 expose bits 4..7; Free4 uses a different index set that is not verified.
+     */
+    static boolean hasAncLevels(String deviceName) {
+        String normalized = normalize(deviceName);
+        return normalized.contains("encox3") || normalized.contains("encox4");
     }
 
     /**

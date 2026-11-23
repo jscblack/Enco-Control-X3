@@ -27,12 +27,29 @@ public final class EncoProtocolTest {
         hexEquals("aa0700000601700000", EncoProtocol.requestBatteryFrame(0x70));
         hexEquals("aa0c00002f017005000106010000", EncoProtocol.multiBatteryRequestFrame(0x70));
         hexEquals("aa0700000001520000", EncoProtocol.protocolHelloFrame(0x52));
+        hexEquals("aa0700000301530000", EncoProtocol.queryProductIdFrame(0x53));
         hexEquals("aa07000000025c0000", EncoProtocol.queryNotificationCapabilityFrame(0x5c));
         hexEquals("aa11000005026e0a0009f1f2f301020304080b", EncoProtocol.registerNotificationsFrame(0x6e));
         hexEquals("aa0700003412ff0000", EncoProtocol.singleFrame(0x1234, null, 0x1ff));
+        // X3 writes exact child bitmaps; parent values are not used by the panel.
+        hexEquals("aa0a000004044a0300010108",
+                EncoProtocol.setNoiseModeFrame(EncoProtocol.MODE_OFF, 0x4a, true));
+        hexEquals("aa0b000004044a040001010001",
+                EncoProtocol.setNoiseModeFrame(EncoProtocol.MODE_TRANSPARENCY, 0x4a, true));
+        hexEquals("aa0a000004044a0300010180", EncoProtocol.setNoiseDepthFrame(4, 0x4a));
+        hexEquals("aa0b000004044a040001010002",
+                EncoProtocol.setTransparencyVoiceFrame(true, 0x4a));
+        hexEquals("aa0b000004044a040001010001",
+                EncoProtocol.setTransparencyVoiceFrame(false, 0x4a));
         try {
             EncoProtocol.setNoiseModeFrame(99, 0);
             throw new AssertionError("Unsupported noise mode was accepted");
+        } catch (IllegalArgumentException expected) {
+            checks++;
+        }
+        try {
+            EncoProtocol.setNoiseModeFrame(EncoProtocol.MODE_ADAPTIVE, 0, true);
+            throw new AssertionError("X3 adaptive major mode was accepted");
         } catch (IllegalArgumentException expected) {
             checks++;
         }
@@ -78,6 +95,9 @@ public final class EncoProtocolTest {
                 "unknown device type ignored");
         check(EncoProtocol.parseBattery(EncoProtocol.singleFrame(0x0204, hex("0203010402040304"), 0)) == null,
                 "case event cannot become battery data");
+        // X3 answers the direct 0x0106 query with 0x8106.
+        battery(EncoProtocol.singleFrame(0x8106, hex("000201640264"), 0x70),
+                100, 100, -1, false, false, false);
     }
 
     private static void modes() {
@@ -105,14 +125,29 @@ public final class EncoProtocolTest {
                     EncoProtocol.singleFrame(0x0204, hex(variant), 0x47)),
                     "Free4 ANC depth or adaptive notification");
         }
-        for (String invalid : new String[]{"0101", "010100", "02010001", "01010010", "0001010000", "7f010104"}) {
+        for (String invalid : new String[]{"0101", "010100", "02010001", "0001010000", "7f010104"}) {
             equal(-1, EncoProtocol.parseNoiseMode(EncoProtocol.singleFrame(0x810C, hex(invalid), 0)),
                     "malformed or unknown mode query response");
         }
-        for (String invalid : new String[]{"03010100", "0301010010", "03020102", "03010202", "01010102"}) {
+        for (String invalid : new String[]{"03010100", "03020102", "03010202", "01010102"}) {
             equal(-1, EncoProtocol.parseNoiseMode(EncoProtocol.singleFrame(0x0204, hex(invalid), 0)), "unknown mode event");
         }
+        // Both reply shapes carry the X4 adaptive major mode at bit 12.
+        equal(EncoProtocol.MODE_ADAPTIVE,
+                EncoProtocol.parseNoiseMode(EncoProtocol.singleFrame(0x810C, hex("01010010"), 0)),
+                "X4 adaptive query response");
+        equal(EncoProtocol.MODE_ADAPTIVE,
+                EncoProtocol.parseNoiseMode(EncoProtocol.singleFrame(0x0204, hex("0301010010"), 0)),
+                "X4 adaptive notification");
         equal(-1, EncoProtocol.parseNoiseMode(EncoProtocol.singleFrame(0x1234, hex("03010102"), 0)), "unknown command");
+        // X3 bit 9 is the transparency voice-enhancement child, not a separate major mode.
+        equal(EncoProtocol.MODE_TRANSPARENCY,
+                EncoProtocol.parseNoiseMode(EncoProtocol.singleFrame(0x0204, hex("0301010002"), 0xff)),
+                "X3 voice enhancement notification");
+        equal(EncoProtocol.MODE_TRANSPARENCY,
+                EncoProtocol.parseNoiseMode(EncoProtocol.singleFrame(0x810C, hex("0001010002"), 0x47)),
+                "X3 voice enhancement query response");
+        equal(EncoProtocol.MODE_TRANSPARENCY, EncoProtocol.modeFromMask(0x200), "X3 voice mask");
     }
 
     private static void caseStatus() {

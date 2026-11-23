@@ -4,8 +4,8 @@ This document is a high-level interoperability note for maintaining the
 project. It intentionally excludes decompiled application code, raw packet
 captures, Bluetooth addresses, device identifiers, and unrelated system logs.
 
-The notes apply to OPPO Enco Free4 and OPPO Enco X4 behavior observed on the
-maintainers' devices. Other models or firmware versions may differ.
+The notes apply to OPPO Enco Free4, OPPO Enco X4 and OPPO Enco X3 behavior
+observed on the maintainers' devices. Other models or firmware versions may differ.
 
 ## Transport
 
@@ -196,6 +196,66 @@ connection, so the three-mode panel needs no model-specific branch.
   (bits 1 and 2) on X4 and does not describe the three-state mode. It most
   likely carries ANC depth/adaptive state; the write path for those submodes is
   still unverified.
+
+## Enco X3
+
+X3 uses the same vendor service UUID, RFCOMM channel 15, framing and command
+set as Free4/X4. The mode field, however, is richer: every noise mode is a
+bitmap child, and the transparency parent has a second child.
+
+### Identification and transport
+
+- `0x0103` (product id) answers `00 10 74 06`, i.e. product id `0x067410`.
+  The app queries it once on X3 connection for identification.
+- `0x0200` answers `09 01 02 03 04 08 0B F1 F2 F3`, the same nine events the
+  project already registers.
+- `0x010C` with selector `01 01` answers `00 01 01` followed by the bitmap in
+  little-endian order, e.g. `08 00` for off and `00 02` for bit 9.
+
+### Noise bitmaps
+
+`0x0404` payload is `01 01` plus the shortest little-endian bitmap:
+
+| Mode | Bitmap | Payload | Notes |
+|---|---:|---|---|
+| Off | `0x008` | `01 01 08` | child of the `0x01` off parent |
+| Deep cancellation | `0x010` | `01 01 10` | cancellation level 1 |
+| Medium cancellation | `0x020` | `01 01 20` | cancellation level 2 |
+| Light cancellation | `0x040` | `01 01 40` | cancellation level 3 |
+| Smart cancellation | `0x080` | `01 01 80` | cancellation level 4, the vendor default |
+| Transparency | `0x100` | `01 01 00 01` | fixed transparency child |
+| Transparency + voice enhancement | `0x200` | `01 01 00 02` | "强化人声" child |
+
+The parent values `0x01`, `0x02` and `0x04` are accepted but are aliases: the
+firmware resolves them to the child that was used last. In particular, writing
+`0x04` was observed reading back `0x200` (voice enhancement), not `0x100`. A
+client that wants a deterministic result must write child bitmaps.
+
+The existing three-state table already folds bits 0..8 into off/cancellation/
+transparency. Add bit 9 to transparency as well; otherwise a device in voice
+enhancement reports an unknown mode and the panel keeps the previous state.
+Bit 12 (the X4 adaptive major mode) is not used by X3.
+
+`0x0204` event `03` reports the same bitmap after a touch-control change, e.g.
+`03 01 01 00 02` for transparency with voice enhancement.
+
+### Battery
+
+- `0x0106` answers `0x8106` with `00 COUNT (id, raw)*`, the same device types
+  1/2/3 and charging bit as Free4/X4.
+- The direct query is the documented path for this model. The app keeps the
+  `0x012F` batch request and adds `0x0106` as a fallback; whether X3 answers the
+  batch request on every firmware is not verified.
+- The case entry is absent while the earbuds are out of the case, and a sleeping
+  case may not report until one earbud is taken out with the lid open.
+
+### Differences from X4
+
+- X3 bit 7 is "smart cancellation", while X4 bit 7 is its fourth cancellation
+  step and X4 exposes adaptive as a separate major mode at bit 12.
+- X3 bit 9 is the transparency voice-enhancement child; X4 has no such value.
+- The vendor app calls the X3 switch "强化人声": it attenuates ambient sound while
+  lifting voices. It is a transparency sub-switch, not a fourth major mode.
 
 ## Maintenance guidance
 

@@ -7,5 +7,6 @@ public class Context {
  public Context getApplicationContext(){return this;}
  public int checkSelfPermission(String name){return permission;}
  public Object getSystemService(String name){return manager;}
+ public String getString(int id){return "";}
  public SharedPreferences getSharedPreferences(String name,int mode){return prefs.computeIfAbsent(name,k->new SharedPreferences());}
 }

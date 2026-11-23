@@ -196,7 +196,7 @@ public class EncoWidgets extends AppWidgetProvider {
             if(!EncoWidgetService.start(context,value)) {
                 Toast.makeText(context,EncoWidgetService.allowed(context)
                         ?"暂时无法同步，请点击卡片空白处打开软件后重试"
-                        :"请打开 Enco Free4，允许附近的设备权限后重试",Toast.LENGTH_SHORT).show();
+                        :"请打开 Enco 控制，允许附近的设备权限后重试",Toast.LENGTH_SHORT).show();
                 scheduleUpdate(context);
             }
             return;

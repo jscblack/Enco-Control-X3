@@ -48,6 +48,19 @@ assert.equal(
   singleFrame(0x0106, [], 0x70).toString("hex"),
   "aa0700000601700000",
 );
+// X3 exact child bitmaps: off 0x08, fixed transparency 0x100, voice enhancement 0x200.
+assert.equal(
+  singleFrame(0x0404, [1, 1, 8], 0x4a).toString("hex"),
+  "aa0a000004044a0300010108",
+);
+assert.equal(
+  singleFrame(0x0404, [1, 1, 0, 1], 0x4a).toString("hex"),
+  "aa0b000004044a040001010001",
+);
+assert.equal(
+  singleFrame(0x0404, [1, 1, 0, 2], 0x4a).toString("hex"),
+  "aa0b000004044a040001010002",
+);
 assert.equal(
   singleFrame(0x012f, [1, 6, 1, 0, 0], 0x70).toString("hex"),
   "aa0c00002f017005000106010000",
@@ -55,6 +68,10 @@ assert.equal(
 assert.equal(
   singleFrame(0x0100, [], 0x52).toString("hex"),
   "aa0700000001520000",
+);
+assert.equal(
+  singleFrame(0x0103, [], 0x53).toString("hex"),
+  "aa0700000301530000",
 );
 assert.equal(
   singleFrame(0x0200, [], 0x5c).toString("hex"),
@@ -95,7 +112,7 @@ function parseBatteryData(payload) {
 function parseBattery(data) {
   for (let offset = 0; offset + 7 < data.length; offset++) {
     const command = data.readUInt16LE(offset);
-    if (command !== 0x0204 && command !== 0x0617 && command !== 0x812f) {
+    if (command !== 0x0204 && command !== 0x0617 && command !== 0x8106 && command !== 0x812f) {
       continue;
     }
     const length = data.readUInt16LE(offset + 3);
@@ -131,6 +148,13 @@ assert.deepEqual(
     1: { level: 100, charging: false },
     2: { level: 100, charging: false },
     3: { level: 20, charging: false },
+  },
+);
+assert.deepEqual(
+  parseBattery(singleFrame(0x8106, [0, 2, 1, 100, 2, 100], 0x70)),
+  {
+    1: { level: 100, charging: false },
+    2: { level: 100, charging: false },
   },
 );
 assert.deepEqual(
@@ -179,7 +203,9 @@ function parseNoiseMode(data) {
     while (((mask >>> protocolIndex) & 1) === 0) protocolIndex++;
     if (protocolIndex === 0 || protocolIndex === 3) return "off";
     if ([1, 4, 5, 6, 7, 11].includes(protocolIndex)) return "anc";
-    if (protocolIndex === 2 || protocolIndex === 8) return "transparency";
+    if (protocolIndex === 2 || protocolIndex === 8 || protocolIndex === 9) {
+      return "transparency";
+    }
   }
   return null;
 }
@@ -199,6 +225,11 @@ assert.equal(
 for (const payload of [[3, 1, 1, 0x20], [3, 1, 1, 0x40], [3, 1, 1, 0x80], [3, 1, 1, 0, 8]]) {
   assert.equal(parseNoiseMode(singleFrame(0x0204, payload, 0xff)), "anc");
 }
+// X3 "强化人声" is a transparency child at bit 9.
+assert.equal(
+  parseNoiseMode(singleFrame(0x0204, [3, 1, 1, 0, 2], 0xff)),
+  "transparency",
+);
 
 function parseEarStatus(data) {
   for (let offset = 0; offset + 7 < data.length; offset++) {

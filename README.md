@@ -1,10 +1,10 @@
 # Enco Free4 Control
 
-无需 Root 的 **OPPO Enco Free4 / Enco X4** Android 控制面板与桌面小部件。
+无需 Root 的 **OPPO Enco Free4 / Enco X4 / Enco X3** Android 控制面板与桌面小部件。
 
-An unofficial Android controller for OPPO Enco Free4 and Enco X4: noise control, battery status, media volume and glass-style home screen widgets.
+An unofficial Android controller for OPPO Enco Free4, Enco X4 and Enco X3: noise control, battery status, media volume and glass-style home screen widgets.
 
-[下载 2.0.0 APK](https://github.com/uninner/EncoFree4-Control/releases/latest) · [更新记录](CHANGELOG.md) · [隐私说明](PRIVACY.md) · [协议笔记](docs/PROTOCOL.md)
+[下载 2.1.0 APK](https://github.com/uninner/EncoFree4-Control/releases/latest) · [更新记录](CHANGELOG.md) · [隐私说明](PRIVACY.md) · [协议笔记](docs/PROTOCOL.md)
 
 ---
 
@@ -14,7 +14,7 @@ An unofficial Android controller for OPPO Enco Free4 and Enco X4: noise control,
 
 原作者以极其严谨的工程方式，**从零逆向出 OPPO Enco 系列的经典蓝牙 SPP 传输层、TLV 帧格式、命令号与降噪模式位图**，并将其整理成可读的协议笔记；在此基础上完成了底部控制面板、玻璃质感界面、快捷设置磁贴与桌面小部件，还搭建了无需模拟器的纯 JVM 测试与 CI 流水线。
 
-没有原作者这份慷慨开源的高质量工作，本次对 OPPO Enco X4 的适配将完全无从谈起。**在此向原作者致以最诚挚、最隆重的感谢。**
+没有原作者这份慷慨开源的高质量工作，本次对 OPPO Enco X4 与 Enco X3 的适配将完全无从谈起。**在此向原作者致以最诚挚、最隆重的感谢。**
 
 ---
 
@@ -22,6 +22,7 @@ An unofficial Android controller for OPPO Enco Free4 and Enco X4: noise control,
 
 - 控制中心快捷设置磁贴：点按打开底部控制面板。
 - 降噪、通透和关闭模式；收到耳机确认后更新选中状态。
+- X3 通透模式下，长按「通透」切换「强化人声」子开关。
 - 左右耳电量；耳机均在盒内且协议返回数据时显示充电盒电量。
 - 白色媒体音量条，与手机音量键同步。
 - 2×2 / 2×1 固定尺寸玻璃小部件：连接状态、电量、降噪与通透切换。
@@ -31,20 +32,20 @@ An unofficial Android controller for OPPO Enco Free4 and Enco X4: noise control,
 
 ## OPPO Enco X4 适配说明
 
-本分支在原作者 2.0.0 的基础上增加了 **OPPO Enco X4** 支持，Enco Free4 的原有功能保持不变。
+本分支在原作者 2.0.0 的基础上增加了 **OPPO Enco X4** 与 **OPPO Enco X3** 支持，Enco Free4 的原有功能保持不变。
 
 ### 适配了什么
 
 | 项目 | 说明 |
 |---|---|
-| **型号识别** | 新增 `EncoModels`，集中管理支持的机型（`encofree4` / `encox4`），替换原先分散在主面板与小部件服务中的硬编码名称判断 |
+| **型号识别** | 新增 `EncoModels`，集中管理支持的机型（`encofree4` / `encox4` / `encox3` / `encoclip`），替换原先分散在主面板与小部件服务中的硬编码名称判断 |
 | **传输层** | 完全复用。实测 X4 使用相同的 SPP 服务 UUID、TLV 帧格式、序列号与通知注册集，无需改动 |
 | **自适应模式** | X4 的「自适应」是**独立主模式**（状态位图 bit 12），与降噪 / 通透 / 关闭同级；写入时该字段需为 **2 字节小端位图** `01 01 00 10`，单字节枚举无法表达 |
 | **降噪子档** | X4 的降噪分四档：深度（实时计算）/ 中度 / 轻度 / 自适应，分别对应状态位图 **bit 4 ~ bit 7**。面板上**长按「降噪」按钮**循环切换 |
 | **状态显示** | 按层级显示当前状态：`当前 · 降噪 · 深度降噪（实时计算）`、`当前 · 降噪 · 中度降噪`、`当前 · 自适应`、`当前 · 通透`、`当前 · 关闭` |
 | **界面** | 主模式按钮由 3 个扩展为 4 个：降噪 / 自适应 / 通透 / 关闭 |
 | **型号图片** | 按识别到的型号自动切换耳机图；X4 提供白 / 紫灰 / 粉三种配色，通过耳机图左上角色块切换并记住选择 |
-| **兼容处理** | 连接 Free4 时自动隐藏「自适应」按钮（该模式在 Free4 上的位编号未经真机验证） |
+| **兼容处理** | 连接 Free4 / X3 时自动隐藏「自适应」按钮（该模式在两者上的位编号未验证或不存在）；Free4 同时关闭长按子档切换，避免写入未经验证的档位 |
 | **探针日志** | 帧收发日志改为按构建类型开关（debug 开启 / release 关闭），便于后续适配新机型 |
 
 ### 真机验证
@@ -57,12 +58,53 @@ An unofficial Android controller for OPPO Enco Free4 and Enco X4: noise control,
 
 - **稳定性仍需长期测试**：目前仅在单台设备上完成验证
 - 耳机颜色无法通过蓝牙协议识别，需手动切换
-- Free4 的降噪子档位编号与 X4 不同（原协议笔记记录为 index 5/6/7/11），长按切换子档在 Free4 上可能不准确
+- Free4 的降噪子档位编号与 X4 不同（原协议笔记记录为 index 5/6/7/11），因此 Free4 不提供长按子档切换
 - 桌面小部件暂不随型号切换耳机图片
 
 ### 协议记录
 
 本次新增的协议发现已补充进 [`docs/PROTOCOL.md`](docs/PROTOCOL.md) 的 **Enco X4** 章节。
+
+## OPPO Enco X3 适配说明
+
+X3 与 X4 共用同一套经典蓝牙 SPP 传输层和 TLV 命令集，但降噪位图的层级语义不同。适配基于 macOS 端 [EncoX3-Mac](https://github.com/JonathanChan-geek/EncoX3-Mac) 项目的实测位图，以及官方 App 对「强化人声」子开关的确认。
+
+### 模式与位图
+
+| 模式 | 位图 | 写入值 | 面板入口 |
+|---|---:|---|---|
+| 关闭 | `0x008` | `01 01 08` | 关闭按钮 |
+| 深度降噪 | `0x010` | `01 01 10` | 长按降噪，第 1 档 |
+| 中度降噪 | `0x020` | `01 01 20` | 长按降噪，第 2 档 |
+| 轻度降噪 | `0x040` | `01 01 40` | 长按降噪，第 3 档 |
+| 智能切换 | `0x080` | `01 01 80` | 长按降噪，第 4 档 |
+| 通透 | `0x100` | `01 01 00 01` | 通透按钮 |
+| 通透 + 强化人声 | `0x200` | `01 01 00 02` | 长按通透切换 |
+
+X3 的 `0x01 / 0x02 / 0x04` 是父值，固件会把它们解析成上次使用的子项（实测写 `0x04` 会落到 `0x200`）。因此面板对 X3 **只写子值位图**，避免「点了通透却进入强化人声」的问题。
+
+### 适配了什么
+
+| 项目 | 说明 |
+|---|---|
+| **型号识别** | `EncoModels` 新增 `encox3`，并区分 X3 专属的「强化人声」能力 |
+| **模式读取** | `modeFromProtocolIndex` 把 bit 9 归入通透，面板不会再把 `0x200` 当成未知模式而静默保留旧状态 |
+| **通透按钮** | X3 写入固定的 `0x100` 子值，而不是父值 `0x04` |
+| **强化人声** | 长按「通透」在 `0x100` / `0x200` 之间切换；状态标签显示 `当前 · 通透 · 强化人声` |
+| **降噪按钮** | 进入降噪时写入上次确认的档位（默认智能 `0x80`），不再依赖未验证的父值 `0x02` |
+| **电量兜底** | 除 `0x012F` 批量请求外，X3 额外发送 `0x0106` 直查，并接受 `0x8106` 响应 |
+| **界面** | 「自适应」按钮保持隐藏；降噪四档文案改为深度 / 中度 / 轻度 / 智能切换 |
+
+### 已知限制
+
+- X3 暂无专属耳机图，面板与小部件回落到通用图
+- 尚未在 Android 真机上完成 X3 验证；协议位图来自 macOS 端实测，写入与读取路径已按同一份证据实现
+- X3 固件版本未记录，若后续固件改变位图，需要重新采集
+- 耳机在充电盒内可能拒绝切换（X4 返回 `0x0E`，X3 未验证），取出佩戴后再操作
+
+### 协议记录
+
+X3 的位图、父子值与电量响应已补充进 [`docs/PROTOCOL.md`](docs/PROTOCOL.md) 的 **Enco X3** 章节。
 
 ## 预览
 
@@ -74,13 +116,13 @@ An unofficial Android controller for OPPO Enco Free4 and Enco X4: noise control,
 
 ## 安装与使用
 
-要求 **Android 14 或更新版本**。目前支持 OPPO Enco Free4 与 OPPO Enco X4（固件 116.116.100 实测通过），其他耳机型号未验证。
+要求 **Android 14 或更新版本**。目前支持 OPPO Enco Free4、OPPO Enco X4（固件 116.116.100 实测通过）与 OPPO Enco X3（协议已交叉验证，Android 真机待验证），其他耳机型号未验证。
 
 1. 在 [Releases](https://github.com/uninner/EncoFree4-Control/releases) 下载 APK 并安装。
 2. 在系统蓝牙设置中配对并连接耳机。
-3. 下拉控制中心，编辑快捷设置磁贴，添加 **Enco Free4**。
+3. 下拉控制中心，编辑快捷设置磁贴，添加 **Enco**。
 4. 点按磁贴打开面板，并允许“附近的设备”权限。
-5. 如需桌面控制，长按桌面进入小部件列表，添加 **Enco Free4 · 2×2** 或 **2×1**。
+5. 如需桌面控制，长按桌面进入小部件列表，添加 **Enco · 2×2** 或 **2×1**。
 
 本应用通过快捷设置磁贴和小部件进入，没有独立的桌面启动图标。
 

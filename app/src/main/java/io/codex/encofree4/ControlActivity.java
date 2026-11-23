@@ -87,19 +87,30 @@ public final class ControlActivity extends Activity implements EncoController.Li
     private PanelState state;
     private boolean connected;
     private int failedMode = -1;
+    private int pendingVoiceState = -1; // 1 on, 0 off, -1 no pending voice request
     private final Runnable modeTimeoutTask = () -> {
         if (!canRender() || state.pendingMode < 0) {
             return;
         }
+        int failedVoice = pendingVoiceState;
+        pendingVoiceState = -1;
         failedMode = state.expireRequest();
         if (state.confirmedMode < 0) {
             modeReadTimedOut = true;
         }
         renderMode(state.confirmedMode);
+        Runnable retry;
+        if (failedVoice >= 0) {
+            retry = () -> requestTransparencyVoice(failedVoice == 1);
+        } else if (state.confirmedMode < 0) {
+            retry = this::refreshNoiseMode;
+        } else {
+            retry = () -> requestNoiseMode(failedMode);
+        }
         showStatus(getString(R.string.mode_confirmation_timeout),
-                getString(state.confirmedMode < 0 ? R.string.refresh_mode : R.string.retry),
-                state.confirmedMode < 0 ? this::refreshNoiseMode
-                        : () -> requestNoiseMode(failedMode));
+                getString(failedVoice >= 0 || state.confirmedMode >= 0
+                        ? R.string.retry : R.string.refresh_mode),
+                retry);
     };
     private final Runnable modeReadTimeoutTask = () -> {
         if (!canRender() || !connected || state.confirmedMode >= 0 || state.pendingMode >= 0) {
@@ -144,6 +155,8 @@ public final class ControlActivity extends Activity implements EncoController.Li
     private boolean leftInBox, rightInBox, hasEarState, earDetailSeen;
     private int colorIndex;
     private int confirmedDepth = -1;
+    private boolean transparencyVoice;
+    private boolean x3Model;
     private TextView ancButton;
     private TextView offButton;
     private TextView[] modeButtons;
@@ -285,6 +298,7 @@ public final class ControlActivity extends Activity implements EncoController.Li
     /** Hides features the connected model does not expose, and refreshes the artwork. */
     private void applyModelFeatures() {
         String name = currentDeviceName();
+        x3Model = EncoModels.isX3(name);
         if (name != null) {
             getSharedPreferences("enco_widgets", MODE_PRIVATE)
                     .edit().putString("device_name", name).apply();
@@ -297,6 +311,16 @@ public final class ControlActivity extends Activity implements EncoController.Li
             noiseSection.setVisibility(
                     EncoModels.hasNoiseControl(name) ? View.VISIBLE : View.GONE);
         }
+        if (ancButton != null) {
+            ancButton.setOnLongClickListener(
+                    EncoModels.hasAncLevels(name) ? view -> cycleNoiseDepth() : null);
+        }
+        if (transparencyButton != null) {
+            transparencyButton.setOnLongClickListener(
+                    EncoModels.hasTransparencyVoice(name)
+                            ? view -> toggleTransparencyVoice() : null);
+        }
+        renderModeTag();
         renderDeviceArt();
     }
 
@@ -352,11 +376,15 @@ public final class ControlActivity extends Activity implements EncoController.Li
         }
         state.observeMode(mode);
         saveNoiseMode(mode);
+        if (mode != EncoProtocol.MODE_TRANSPARENCY) {
+            transparencyVoice = false;
+        }
         modeReadTimedOut = false;
         mainHandler.removeCallbacks(modeReadTimeoutTask);
         if (state.pendingMode < 0) {
             mainHandler.removeCallbacks(modeTimeoutTask);
             failedMode = -1;
+            pendingVoiceState = -1;
             hideStatus();
         }
         renderMode(state.confirmedMode);
@@ -368,6 +396,18 @@ public final class ControlActivity extends Activity implements EncoController.Li
             return;
         }
         confirmedDepth = depth;
+        renderModeTag();
+    }
+
+    @Override
+    public void onTransparencyVoice(boolean enabled) {
+        if (!canRender() || !connected) {
+            return;
+        }
+        transparencyVoice = enabled;
+        if (state.pendingMode < 0) {
+            pendingVoiceState = -1;
+        }
         renderModeTag();
     }
 
@@ -976,8 +1016,9 @@ public final class ControlActivity extends Activity implements EncoController.Li
                 EncoProtocol.MODE_OFF
         );
         modeButtons = new TextView[]{offButton, transparencyButton, ancButton, adaptiveButton};
-        // Long press on the cancellation button walks the four cancellation steps.
-        ancButton.setOnLongClickListener(view -> cycleNoiseDepth());
+        // Long-press handlers are installed in applyModelFeatures() once the model is known:
+        // X3/X4 walk ANC levels on the cancellation button, X3 toggles voice enhancement on
+        // the transparency button, and Free4/Clip keep plain taps only.
 
         // Display order: cancellation, adaptive, transparency, off. Each button keeps the
         // mode it was created with, so the order only affects placement, not behaviour.
@@ -1134,23 +1175,59 @@ public final class ControlActivity extends Activity implements EncoController.Li
         return true;
     }
 
+    /** Long-press on transparency for X3: toggles the "强化人声" child (bit 9). */
+    private boolean toggleTransparencyVoice() {
+        if (!canRender() || !connected || controller == null || !x3Model) {
+            return true;
+        }
+        boolean target = !transparencyVoice;
+        if (requestTransparencyVoice(target)) {
+            Toast.makeText(this,
+                    getString(target ? R.string.voice_enhance_on : R.string.voice_enhance_off),
+                    Toast.LENGTH_SHORT).show();
+        }
+        return true;
+    }
+
+    private boolean requestTransparencyVoice(boolean enabled) {
+        if (!canRender() || !connected || controller == null || !x3Model) {
+            return false;
+        }
+        if (!state.requestMode(EncoProtocol.MODE_TRANSPARENCY)) {
+            return false;
+        }
+        if (!controller.setTransparencyVoice(enabled)) {
+            state.expireRequest();
+            renderMode(state.confirmedMode);
+            return false;
+        }
+        pendingVoiceState = enabled ? 1 : 0;
+        failedMode = -1;
+        modeReadTimedOut = false;
+        hideStatus();
+        renderMode(state.confirmedMode);
+        mainHandler.removeCallbacks(modeTimeoutTask);
+        mainHandler.postDelayed(modeTimeoutTask, MODE_CONFIRM_TIMEOUT_MS);
+        return true;
+    }
+
     /**
      * Names for the four cancellation steps, in ascending bitmap order.
      *
-     * <p>Calibrated on Enco X4 firmware 116.116.100 by selecting each step in the
-     * vendor app on a second phone and reading the bitmap back, so these are the
-     * vendor's own labels rather than inferred ones.
+     * <p>X4 was calibrated on firmware 116.116.100 by selecting each step in the vendor
+     * app and reading the bitmap back. X3 uses the same bit order but calls bit 7
+     * "智能切换" and does not expose the X4 "实时计算" wording.
      */
     private String depthLabel(int depth) {
         switch (depth) {
             case 1:
-                return getString(R.string.depth_1);
+                return getString(x3Model ? R.string.x3_depth_1 : R.string.depth_1);
             case 2:
-                return getString(R.string.depth_2);
+                return getString(x3Model ? R.string.x3_depth_2 : R.string.depth_2);
             case 3:
-                return getString(R.string.depth_3);
+                return getString(x3Model ? R.string.x3_depth_3 : R.string.depth_3);
             case 4:
-                return getString(R.string.depth_4);
+                return getString(x3Model ? R.string.x3_depth_4 : R.string.depth_4);
             default:
                 return "";
         }
@@ -1214,10 +1291,16 @@ public final class ControlActivity extends Activity implements EncoController.Li
                         ? R.string.mode_switch_retry_tag : R.string.mode_read_retry_tag);
                 break;
             case CURRENT:
-                noiseModeSummary.setText(
-                        state.confirmedMode == EncoProtocol.MODE_ANC && confirmedDepth > 0
-                                ? getString(R.string.mode_current_cancel, depthLabel(confirmedDepth))
-                                : getString(R.string.mode_current, modeName(state.confirmedMode)));
+                if (state.confirmedMode == EncoProtocol.MODE_TRANSPARENCY && transparencyVoice) {
+                    noiseModeSummary.setText(getString(R.string.mode_current_voice,
+                            modeName(EncoProtocol.MODE_TRANSPARENCY)));
+                } else if (state.confirmedMode == EncoProtocol.MODE_ANC && confirmedDepth > 0) {
+                    noiseModeSummary.setText(
+                            getString(R.string.mode_current_cancel, depthLabel(confirmedDepth)));
+                } else {
+                    noiseModeSummary.setText(
+                            getString(R.string.mode_current, modeName(state.confirmedMode)));
+                }
                 break;
             case READ_FAILED:
                 noiseModeSummary.setText(R.string.mode_read_failed_tag);
@@ -1260,6 +1343,9 @@ public final class ControlActivity extends Activity implements EncoController.Li
             state.disconnect();
             failedMode = -1;
             bothEarbudsInCase = false;
+            confirmedDepth = -1;
+            transparencyVoice = false;
+            pendingVoiceState = -1;
         }
         if (newlyConnected && state.confirmedMode < 0) {
             mainHandler.removeCallbacks(modeReadTimeoutTask);

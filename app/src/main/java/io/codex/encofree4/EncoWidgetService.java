@@ -143,7 +143,7 @@ public final class EncoWidgetService extends Service implements EncoController.L
         // No notification-drawer controls, status updates, sound, or permission prompt.
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_qs_earbuds)
-                .setContentTitle("Enco Free4")
+                .setContentTitle("Enco 耳机")
                 .setContentText("桌面小部件同步")
                 .setOngoing(true).setOnlyAlertOnce(true).setDefaults(0)
                 .setShowWhen(false).setCategory(Notification.CATEGORY_SERVICE)
