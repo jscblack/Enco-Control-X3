@@ -27,5 +27,6 @@ public final class R {
         public static final int enco_clip_sea_case = 9;
         public static final int enco_clip_grey_buds = 10;
         public static final int enco_clip_grey_case = 11;
+        public static final int enco_x3_black_buds = 12;
     }
 }

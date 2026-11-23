@@ -2,6 +2,7 @@ package io.codex.encofree4;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -45,9 +46,25 @@ public class EncoModelsTest {
     @Test public void namesAreNormalizedAndUnknownModelsFallBackToGenericArtwork() {
         assertTrue(EncoModels.isSupported(" OPPO Enco X3 "));
         assertFalse(EncoModels.isSupported("OPPO Enco Air4 Pro"));
-        assertEquals(R.drawable.enco_device,
-                EncoModels.deviceImage("OPPO Enco X3", "white", false));
+        assertEquals(R.drawable.enco_device, EncoModels.deviceImage(null, "white", false));
         assertEquals(R.drawable.enco_x4_white_buds,
                 EncoModels.deviceImage("OPPO Enco X4", "white", false));
+    }
+
+    @Test public void x3UsesItsOwnArtworkForBothStates() {
+        // The X3 render ships bare earbuds only, so the in-case state reuses it.
+        assertEquals(R.drawable.enco_x3_black_buds,
+                EncoModels.deviceImage("OPPO Enco X3", "white", false));
+        assertEquals(R.drawable.enco_x3_black_buds,
+                EncoModels.deviceImage("OPPO Enco X3", "white", true));
+    }
+
+    @Test public void panelTitleUsesTheModelNameWhenKnown() {
+        assertEquals("OPPO Enco X3", EncoModels.displayName("OPPO Enco X3"));
+        assertEquals("OPPO Enco X4", EncoModels.displayName(" OPPO Enco X4 "));
+        assertEquals("OPPO Enco Free4", EncoModels.displayName("OPPO Enco Free4"));
+        assertEquals("OPPO Enco Clip", EncoModels.displayName("OPPO Enco Clip"));
+        assertNull(EncoModels.displayName("OPPO Enco Air4 Pro"));
+        assertNull(EncoModels.displayName(null));
     }
 }

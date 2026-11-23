@@ -71,6 +71,9 @@ final class EncoModels {
      * Model artwork. X4 has its own drawing per colour and per state: the open case while
      * both earbuds sit inside, the bare earbuds otherwise. Colours never mix across the two
      * shapes, so a colour always maps to exactly one earbuds image and one case image.
+     *
+     * <p>X3 only has the bare-earbuds render, so the in-case state reuses it instead of
+     * falling back to the generic drawing.
      */
     static int deviceImage(String deviceName, String color, boolean inCase) {
         String normalized = normalize(deviceName);
@@ -80,6 +83,9 @@ final class EncoModels {
                 return sea ? R.drawable.enco_clip_sea_case : R.drawable.enco_clip_grey_case;
             }
             return sea ? R.drawable.enco_clip_sea_buds : R.drawable.enco_clip_grey_buds;
+        }
+        if (normalized.contains("encox3")) {
+            return R.drawable.enco_x3_black_buds;
         }
         if (!normalized.contains("encox4")) {
             return R.drawable.enco_device;
@@ -107,6 +113,28 @@ final class EncoModels {
     /** X3 is the model added in 2.1.0; it shares the transport and TLV command set. */
     static boolean isX3(String deviceName) {
         return normalize(deviceName).contains("encox3");
+    }
+
+    /**
+     * Marketing name for the panel header, or {@code null} for an unknown device so the
+     * caller keeps the generic label. Model names are brand identifiers rather than
+     * translatable copy, so they live here instead of {@code strings.xml}.
+     */
+    static String displayName(String deviceName) {
+        String normalized = normalize(deviceName);
+        if (normalized.contains("encox3")) {
+            return "OPPO Enco X3";
+        }
+        if (normalized.contains("encox4")) {
+            return "OPPO Enco X4";
+        }
+        if (normalized.contains("encofree4")) {
+            return "OPPO Enco Free4";
+        }
+        if (normalized.contains("encoclip")) {
+            return "OPPO Enco Clip";
+        }
+        return null;
     }
 
     /**

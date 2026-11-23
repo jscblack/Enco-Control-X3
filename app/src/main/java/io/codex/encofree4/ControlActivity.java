@@ -161,6 +161,7 @@ public final class ControlActivity extends Activity implements EncoController.Li
     private TextView offButton;
     private TextView[] modeButtons;
     private TextView noiseModeSummary;
+    private TextView panelTitle;
     private VolumeBarView volumeBar;
     private AudioManager audioManager;
     private ContentObserver volumeObserver;
@@ -299,6 +300,11 @@ public final class ControlActivity extends Activity implements EncoController.Li
     private void applyModelFeatures() {
         String name = currentDeviceName();
         x3Model = EncoModels.isX3(name);
+        String modelLabel = EncoModels.displayName(name);
+        if (panelTitle != null) {
+            panelTitle.setText(modelLabel == null
+                    ? getString(R.string.device_name) : modelLabel);
+        }
         if (name != null) {
             getSharedPreferences("enco_widgets", MODE_PRIVATE)
                     .edit().putString("device_name", name).apply();
@@ -609,6 +615,7 @@ public final class ControlActivity extends Activity implements EncoController.Li
         title.setIncludeFontPadding(false);
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.END);
+        panelTitle = title;
         header.addView(title, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         LinearLayout.LayoutParams badgeParams = new LinearLayout.LayoutParams(
